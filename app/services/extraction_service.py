@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.models.extraction import Extraction
 from app.services.pdf_processor import PDFProcessor
-from app.services.llm_service import LLMService
+from app.services.llm_service import LLMService, Provider
 
 
 class ExtractionService:
@@ -13,13 +13,21 @@ class ExtractionService:
     
     def __init__(self):
         self.pdf_processor = PDFProcessor()
-        self.llm_service = LLMService()
+        # LLM service will be initialized per request with the provider
+        self._llm_service_cache = {}
+    
+    def _get_llm_service(self, provider: Provider = "openai") -> LLMService:
+        """Get or create LLM service for the specified provider"""
+        if provider not in self._llm_service_cache:
+            self._llm_service_cache[provider] = LLMService(provider=provider)
+        return self._llm_service_cache[provider]
     
     def process_contract(
         self,
         file_content: bytes,
         filename: str,
-        db: Session
+        db: Session,
+        provider: Provider = "openai"
     ) -> Extraction:
         """
         Process a contract document and extract clauses
@@ -28,6 +36,7 @@ class ExtractionService:
             file_content: PDF file content as bytes
             filename: Original filename
             db: Database session
+            provider: LLM provider to use ("openai" or "gemini"), defaults to "openai"
             
         Returns:
             Extraction record from database
@@ -38,7 +47,8 @@ class ExtractionService:
         pdf_metadata = pdf_data["metadata"]
         
         # Extract clauses using LLM
-        clauses = self.llm_service.extract_clauses(text)
+        llm_service = self._get_llm_service(provider)
+        clauses = llm_service.extract_clauses(text)
         
         # Generate unique document ID
         document_id = str(uuid.uuid4())

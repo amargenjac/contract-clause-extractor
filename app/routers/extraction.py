@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends, File, UploadFile, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import Optional
 
 from app.core.database import get_db
 from app.schemas.extraction import (
@@ -10,6 +9,7 @@ from app.schemas.extraction import (
     Clause
 )
 from app.services.extraction_service import ExtractionService
+from app.services.llm_service import Provider
 
 router = APIRouter(prefix="/api", tags=["extractions"])
 extraction_service = ExtractionService()
@@ -26,12 +26,14 @@ extraction_service = ExtractionService()
 )
 async def extract_contract_clauses(
     file: UploadFile = File(..., description="PDF contract document"),
+    provider: Provider = Query("openai", description="LLM provider to use: 'openai' or 'gemini'"),
     db: Session = Depends(get_db)
 ):
     """
     Extract and structure key clauses from a legal contract.
     
     - **file**: PDF contract document to process
+    - **provider**: LLM provider to use ("openai" or "gemini"), defaults to "openai"
     
     Returns structured JSON with:
     - document_id: Unique identifier for the extraction
@@ -44,6 +46,10 @@ async def extract_contract_clauses(
     if not file.filename.lower().endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
     
+    # Validate provider
+    if provider not in ["openai", "gemini"]:
+        raise HTTPException(status_code=400, detail="Provider must be 'openai' or 'gemini'")
+    
     try:
         # Read file content
         file_content = await file.read()
@@ -52,7 +58,8 @@ async def extract_contract_clauses(
         extraction = extraction_service.process_contract(
             file_content=file_content,
             filename=file.filename,
-            db=db
+            db=db,
+            provider=provider
         )
         
         # Convert clauses to Pydantic models

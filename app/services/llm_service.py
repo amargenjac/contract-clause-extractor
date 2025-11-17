@@ -1,16 +1,37 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Literal
 import json
 from openai import OpenAI
+import google.generativeai as genai
 
 from app.core.config import settings
+
+Provider = Literal["openai", "gemini"]
 
 
 class LLMService:
     """Service for extracting clauses using LLM"""
     
-    def __init__(self):
-        self.client = OpenAI(api_key=settings.openai_api_key) if settings.openai_api_key else None
-        self.model = settings.openai_model
+    def __init__(self, provider: Provider = "openai"):
+        """
+        Initialize LLM service with specified provider
+        
+        Args:
+            provider: LLM provider to use ("openai" or "gemini")
+        """
+        self.provider = provider
+        
+        if provider == "openai":
+            self.client = OpenAI(api_key=settings.openai_api_key) if settings.openai_api_key else None
+            self.model = settings.openai_model
+        elif provider == "gemini":
+            if settings.gemini_api_key:
+                genai.configure(api_key=settings.gemini_api_key)
+                self.client = genai.GenerativeModel(settings.gemini_model)
+            else:
+                self.client = None
+            self.model = settings.gemini_model
+        else:
+            raise ValueError(f"Unsupported provider: {provider}")
     
     def extract_clauses(self, text: str) -> List[Dict[str, Any]]:
         """
@@ -29,27 +50,52 @@ class LLMService:
         prompt = self._create_extraction_prompt(text)
         
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a legal document analyzer. Extract and categorize clauses from contracts."
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                temperature=0.3,
-            )
-            
-            result = response.choices[0].message.content
-            clauses = self._parse_llm_response(result)
-            return clauses
-            
+            if self.provider == "openai":
+                return self._extract_with_openai(prompt)
+            elif self.provider == "gemini":
+                return self._extract_with_gemini(prompt)
+            else:
+                raise ValueError(f"Unsupported provider: {self.provider}")
         except Exception as e:
             raise ValueError(f"Error calling LLM API: {str(e)}")
+    
+    def _extract_with_openai(self, prompt: str) -> List[Dict[str, Any]]:
+        """Extract clauses using OpenAI"""
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a legal document analyzer. Extract and categorize clauses from contracts."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            temperature=0.3,
+        )
+        
+        result = response.choices[0].message.content
+        clauses = self._parse_llm_response(result)
+        return clauses
+    
+    def _extract_with_gemini(self, prompt: str) -> List[Dict[str, Any]]:
+        """Extract clauses using Gemini"""
+        full_prompt = f"""You are a legal document analyzer. Extract and categorize clauses from contracts.
+
+{prompt}"""
+        
+        response = self.client.generate_content(
+            full_prompt,
+            generation_config={
+                "temperature": 0.3,
+            }
+        )
+        
+        result = response.text
+        clauses = self._parse_llm_response(result)
+        return clauses
     
     def _create_extraction_prompt(self, text: str) -> str:
         """Create prompt for LLM clause extraction"""

@@ -11,6 +11,10 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_model: str = "gpt-3.5-turbo"
     
+    # Gemini settings
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-pro"
+    
     # API settings
     api_title: str = "Contract Clause Extractor API"
     api_version: str = "1.0.0"
