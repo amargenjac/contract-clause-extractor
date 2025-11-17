@@ -13,12 +13,15 @@ class Settings(BaseSettings):
     
     # Gemini settings
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-pro"
+    gemini_model: str = "gemini-2.5-flash"
     
     # API settings
     api_title: str = "Contract Clause Extractor API"
     api_version: str = "1.0.0"
     api_description: str = "API for extracting and structuring key clauses from legal contracts"
+    
+    # Logging settings
+    log_level: str = "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
     
     class Config:
         env_file = ".env"
