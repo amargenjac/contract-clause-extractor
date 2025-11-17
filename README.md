@@ -89,10 +89,25 @@ cp .env.example .env
 
 4. Run the application:
 ```bash
-uvicorn app.main:app --reload
+python run.py
+# Or using uvicorn directly:
+# uvicorn app.main:app --reload
 ```
 
 The API will be available at `http://localhost:8000`
+
+### Docker Deployment
+
+You can also run the application using Docker:
+
+```bash
+# Build and run with docker-compose
+docker-compose up -d
+
+# Or build and run manually
+docker build -t contract-extractor .
+docker run -p 8000:8000 -e OPENAI_API_KEY=your-key contract-extractor
+```
 
 ## Configuration
 
