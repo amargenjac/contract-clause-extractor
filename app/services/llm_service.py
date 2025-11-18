@@ -5,6 +5,7 @@ import google.generativeai as genai
 
 from app.core.config import settings
 from app.core.logging_config import get_logger
+from app.schemas.extraction import ClauseExtractionResponse
 
 logger = get_logger(__name__)
 
@@ -81,45 +82,44 @@ class LLMService:
             raise ValueError(f"Error calling LLM API: {str(e)}")
     
     def _extract_with_openai(self, prompt: str) -> List[Dict[str, Any]]:
-        """Extract clauses using OpenAI"""
-        logger.debug(f"Calling OpenAI API with model: {self.model}")
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a legal document analyzer. Extract and categorize clauses from contracts."
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                temperature=0.3,
-            )
-            
-            result = response.choices[0].message.content
-            logger.debug(f"OpenAI response received (length: {len(result)} chars)")
-            
-            # Log token usage if available
-            if hasattr(response, 'usage'):
-                usage = response.usage
-                logger.debug(f"OpenAI token usage - prompt: {usage.prompt_tokens}, completion: {usage.completion_tokens}, total: {usage.total_tokens}")
-            
-            clauses = self._parse_llm_response(result)
-            return clauses
-        except Exception as e:
-            logger.error(f"OpenAI API call failed: {str(e)}", exc_info=True)
-            raise
+        """Extract clauses using OpenAI with structured output"""
+        logger.debug(f"Calling OpenAI API with structured output, model: {self.model}")
+        # Use OpenAI's structured output feature with Pydantic model
+        response = self.client.responses.parse(
+            model=self.model,
+            input=[
+                {
+                    "role": "system",
+                    "content": "You are a legal document analyzer. Extract and categorize clauses from contracts."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            text_format=ClauseExtractionResponse,
+            temperature=0.3,
+        )
+        
+        # Get parsed output from structured response
+        extraction_result = response.output_parsed
+        logger.debug(f"OpenAI structured response received: {len(extraction_result.clauses)} clauses")
+        
+        # Convert Pydantic models to dictionaries
+        clauses = [clause.model_dump() for clause in extraction_result.clauses]
+        logger.debug(f"Converted {len(clauses)} clauses to dictionary format")
+        
+        return clauses
     
     def _extract_with_gemini(self, prompt: str) -> List[Dict[str, Any]]:
         """Extract clauses using Gemini"""
         logger.debug(f"Calling Gemini API with model: {self.model}")
         try:
+            # Use JSON format prompt for Gemini
+            json_prompt = self._create_extraction_prompt_json(prompt.split("Contract text:")[1] if "Contract text:" in prompt else prompt)
             full_prompt = f"""You are a legal document analyzer. Extract and categorize clauses from contracts.
 
-{prompt}"""
+{json_prompt}"""
             
             response = self.client.generate_content(
                 full_prompt,
@@ -144,6 +144,18 @@ class LLMService:
     
     def _create_extraction_prompt(self, text: str) -> str:
         """Create prompt for LLM clause extraction"""
+        return f"""Analyze the following legal contract and extract all key clauses.
+For each clause, provide:
+1. clause_type: The category of the clause (e.g., "Payment Terms", "Confidentiality", "Termination", "Liability", "Governing Law", etc.)
+2. content: The actual text of the clause
+3. page_number: The page number where the clause appears (if mentioned in the text)
+
+Contract text:
+{text}
+"""
+    
+    def _create_extraction_prompt_json(self, text: str) -> str:
+        """Create prompt for LLM clause extraction with JSON format instructions (for Gemini)"""
         return f"""Analyze the following legal contract and extract all key clauses.
 For each clause, provide:
 1. clause_type: The category of the clause (e.g., "Payment Terms", "Confidentiality", "Termination", "Liability", "Governing Law", etc.)
